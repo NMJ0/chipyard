@@ -1,4 +1,5 @@
 package chipyard.fpga.vc707
+
 import chisel3._
 
 import freechips.rocketchip.diplomacy.{LazyModule, LazyRawModuleImp, BundleBridgeSource}
@@ -15,7 +16,7 @@ import sifive.fpgashells.clocks.{PLLFactoryKey}
 import sifive.fpgashells.devices.xilinx.xilinxvc707pciex1.{XilinxVC707PCIeX1IO}
 
 import sifive.blocks.devices.uart.{PeripheryUARTKey, UARTPortIO}
-import sifive.blocks.devices.spi.{PeripherySPIKey, SPIPortIO}
+// SPIPortIO import removed — SD card flow no longer used
 
 import chipyard._
 import chipyard.harness._
@@ -57,29 +58,25 @@ class VC707FPGATestHarness(override implicit val p: Parameters) extends VC707She
   /*** JTAG ***/
   val jtagModule = dp(JTAGDebugOverlayKey).head.place(JTAGDebugDesignInput()).overlayOutput.jtag
 
-  /*** UART ***/
-
-  // 1st UART goes to the VC707 dedicated UART
-
-  val io_uart_bb = BundleBridgeSource(() => (new UARTPortIO(dp(PeripheryUARTKey).head)))
+  /*** UART ***
+   *
+   * The physical UART on the VC707 is now used exclusively for UART-TSI.
+   * io_uart_bb is wired by WithVC707UARTTSIHarnessBinder to the chip's
+   * UARTTSIPort so that FESVR/spike can load programs over the serial port.
+   */
+  val io_uart_bb = BundleBridgeSource(() => new UARTPortIO(dp(PeripheryUARTKey).headOption.getOrElse(
+    sifive.blocks.devices.uart.UARTParams(0))))
   dp(UARTOverlayKey).head.place(UARTDesignInput(io_uart_bb))
 
-  /*** SPI ***/
+  // SPI / SD-card overlay removed — programs are loaded via UART-TSI.
 
-  // 1st SPI goes to the VC707 SDIO port
-
-  val io_spi_bb = BundleBridgeSource(() => (new SPIPortIO(dp(PeripherySPIKey).head)))
-  dp(SPIOverlayKey).head.place(SPIDesignInput(dp(PeripherySPIKey).head, io_spi_bb))
-
-  /*** DDR ***/
-
-  // Modify the last field of `DDRDesignInput` for 1GB RAM size
-  val ddrNode = dp(DDROverlayKey).head.place(DDRDesignInput(dp(ExtTLMem).get.master.base, dutWrangler.node, harnessSysPLL, true)).overlayOutput.ddr
+  /*** DDR (unchanged) ***/
+  val ddrNode = dp(DDROverlayKey).head.place(DDRDesignInput(
+    dp(ExtTLMem).get.master.base, dutWrangler.node, harnessSysPLL, true)).overlayOutput.ddr
   val ddrClient = TLClientNode(Seq(TLMasterPortParameters.v1(Seq(TLMasterParameters.v1(
     name = "chip_ddr",
     sourceId = IdRange(0, 1 << dp(ExtTLMem).get.master.idBits)
   )))))
-
   ddrNode := ddrClient
 
   // module implementation
