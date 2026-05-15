@@ -6,29 +6,29 @@ import chisel3.experimental.{BaseModule}
 import org.chipsalliance.diplomacy.nodes.{HeterogeneousBag}
 import freechips.rocketchip.tilelink.{TLBundle}
 
-import sifive.blocks.devices.uart.{UARTPortIO}
-import sifive.blocks.devices.spi.{HasPeripherySPI, SPIPortIO}
-import sifive.fpgashells.devices.xilinx.xilinxvc707pciex1.{HasSystemXilinxVC707PCIeX1ModuleImp, XilinxVC707PCIeX1IO}
-
-import chipyard.{CanHaveMasterTLMemPort}
+// UARTTSIPort is defined in chipyard.iobinders, not testchipip.serdes.
+// This matches exactly how NexysVideo's HarnessBinders resolves it.
 import chipyard.harness.{HarnessBinder}
-import chipyard.iobinders._
+import chipyard.iobinders._     // UARTTSIPort, TLMemPort, etc.
+import testchipip.serdes._      // SerialTLPort etc.
 
-/*** UART ***/
-class WithVC707UARTHarnessBinder extends HarnessBinder({
-  case (th: VC707FPGATestHarnessImp, port: UARTPort, chipId: Int) => {
-    th.vc707Outer.io_uart_bb.bundle <> port.io
+/*** UART-TSI ***
+ *
+ * Connects the chip's UARTTSIPort to the VC707's physical UART pins via the
+ * io_uart_bb bundle bridge that is declared in VC707FPGATestHarness.
+ * This mirrors WithNexysVideoUARTTSI in the NexysVideo harness binders.
+ */
+class WithVC707UARTTSIHarnessBinder(uartBaudRate: BigInt = 115200) extends HarnessBinder({
+  case (th: VC707FPGATestHarnessImp, port: UARTTSIPort, chipId: Int) => {
+    // Wire the chip-side TSI UART directly to the board UART overlay.
+    th.vc707Outer.io_uart_bb.bundle <> port.io.uart
+    // Optionally surface the "dropped" / state signals to LEDs for debugging.
+    // Uncomment the lines below if you want visibility via the VC707 LEDs:
+    // th.vc707Outer.ledModule.foreach(_(0) := port.io.dropped)
   }
 })
 
-/*** SPI ***/
-class WithVC707SPISDCardHarnessBinder extends HarnessBinder({
-  case (th: VC707FPGATestHarnessImp, port: SPIPort, chipId: Int) => {
-    th.vc707Outer.io_spi_bb.bundle <> port.io
-  }
-})
-
-/*** Experimental DDR ***/
+/*** DDR (unchanged) ***/
 class WithVC707DDRMemHarnessBinder extends HarnessBinder({
   case (th: VC707FPGATestHarnessImp, port: TLMemPort, chipId: Int) => {
     val bundles = th.vc707Outer.ddrClient.out.map(_._1)
@@ -37,3 +37,5 @@ class WithVC707DDRMemHarnessBinder extends HarnessBinder({
     ddrClientBundle <> port.io
   }
 })
+
+// WithVC707SPISDCardHarnessBinder removed — SD card / sdboot flow disabled.
